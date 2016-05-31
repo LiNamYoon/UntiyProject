@@ -1,0 +1,20 @@
+    // 마우스 클릭시 실행되는 변수
+    void OnMouseDown ()
+    {
+        Debug.Log("마우스 클릭");
+    }
+    // 마우스 땔때 실행되는 변수
+    void OnMouseUp()
+    {
+        Debug.Log("마우스 때다");
+    }
+    // 마우스를 정해진 위치에 들어오면 실행되는 변수
+    void OnMouseEnter()
+    {
+        Debug.Log("마우스가 해당 위치에 들어왔다");
+    }
+    // 마우스를 정해진 위치에서 나오면 실행되는 변수
+    void OnMouseExit()
+    {
+        Debug.Log("마우스가 해당 위치에 빠져나왔다");
+    }
