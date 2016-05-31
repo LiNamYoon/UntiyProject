@@ -1,0 +1,26 @@
+    int SumVariable (int numA, int numB)
+    {
+        int sum = numA + numB;
+        return sum;
+    }
+        
+
+    // Use this for initialization
+    void Start () {
+
+        bool What = false;
+        int Test = SumVariable(10, 40);
+
+        // and 연산자 두 함수 모두 참이여야 실행되는 코드
+        if (Test > 30 && What) 
+        {
+            Debug.Log("30보다 클것이다.");
+        }
+        // or 연산자 두 함수 중에서 하나만 참이여도 실행되는 코드
+        if (Test > 30 || What)
+        {
+            Debug.Log("30보다 크다.");
+        }
+
+
+        }
