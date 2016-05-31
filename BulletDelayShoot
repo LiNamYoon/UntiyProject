@@ -1,0 +1,29 @@
+    public GameObject bulletPrefab;
+    // 해당 위치에 원하는 게임 오브젝트를 넣을 수 있다.
+
+    float delayTimer = 0f;
+    public float shootDelayTime = 1f;
+
+	// Use this for initialization
+	void Start () {
+	
+	}
+	
+	// Update is called once per frame
+	void Update () {
+
+        delayTimer += Time.deltaTime;
+        // delayTimer가 시간마다 증가 
+
+
+        // shootDelayTime 보다 delayTimer 가 높고 And Jump 키를 눌렀을 때 실행
+        if ( Input.GetButtonDown("Jump") && delayTimer > shootDelayTime)
+        {
+            Instantiate(bulletPrefab, transform.position, transform.rotation);
+            // instantiate 는 (프리팹, 생성위치, 생성방향) : 프리팹의 인스턴스를 지정된 위치와 방향에 맞게 생성하는 유니티 제공 함수
+
+            delayTimer = 0f;
+            // 다시 delayTimer 초기화
+
+        }
+	}
