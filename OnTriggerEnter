@@ -1,0 +1,50 @@
+ // Collider 체크를 통해 상호작용 하는 클래스
+    public GameObject explosion;
+    public GameObject playerExplosion;
+    // GameController 클래스를 사용하기 위해 필요한 함수
+    GameObject GameController;
+
+    void Start()
+    {
+        
+
+        GameController = GameObject.Find("GameController");
+
+    }
+    // OnTriggerEnter 실제 충돌이 발생할 때 누구와 충돌했는지 알려주는 함수 (Colloder other) 충돌된 객체의 변수(other)지정
+    void OnTriggerEnter(Collider other)
+    {
+        // 충돌했을 때 tag 가 Enemy 인가
+        if (other.gameObject.tag == "Enemy")
+        {
+            return;
+        }
+
+        // 해당 객체가 무언가 충돌되었을 때
+        if (explosion != null)
+        {
+            // 이전 프레임 위치에 (폭발이펙트, 기존의 위치, 기존의 각도)
+            Instantiate(explosion, transform.position, transform.rotation);
+
+        }
+
+        // 충돌했을 때 tag 가 Player 인가
+        if (other.tag == "Player")
+        {
+            // 충돌 위치에(플레이어 폭발이펙트, 충돌체의 위치, 충돌체의 각도)
+            Instantiate(playerExplosion, other.transform.position, other.transform.rotation);
+            // GameController 클래스에 접근하여 public한 GameOver() 실행
+            GameController.GetComponent<GameController>().GameOver();
+        }
+
+
+        // GameController 클래스에 접근하여 public한 AddScore(10) 10점 추가
+        GameController.GetComponent<GameController>().AddScore(10);
+
+        // 삭제 해당 오브젝트
+        Destroy(gameObject);
+        // 삭제 충돌된 오브젝트
+        Destroy(other.gameObject);
+
+
+    }
