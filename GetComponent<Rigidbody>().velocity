@@ -1,0 +1,12 @@
+    public float speed = 5;
+
+
+	void Start ()
+    {
+        //GetComponent 해당 구성요소중 하나를 불러와 실행시키는 함수
+        //velocity == 방향 * 속도
+        GetComponent<Rigidbody>().velocity = new Vector3(0, 0, -1) * speed; 
+
+        
+
+    }
