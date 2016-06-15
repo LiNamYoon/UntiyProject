@@ -1,3 +1,4 @@
+```jave
     public GameObject bulletPrefab;
     // 해당 위치에 원하는 게임 오브젝트를 넣을 수 있다.
 
@@ -27,3 +28,4 @@
 
         }
 	}
+```
