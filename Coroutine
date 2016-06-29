@@ -1,0 +1,16 @@
+    int i = 1;
+
+    void Start()
+    {
+        StartCoroutine("Other"); // 코루틴은 시작점이 있어야한다. 굳이 Start에서 시작할 필요 없다.
+        
+    }
+
+    IEnumerator Other() // IEnumerator 코루틴 메서드 이름
+    {
+
+        Debug.Log("안녕" + i++);
+        yield return new WaitForSeconds(2); // 2초 딜레이 후 실행
+
+        StartCoroutine("Other"); //다시 코루틴 시작 (반복됨) 결과 = 2초마다 출력
+    }
