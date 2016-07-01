@@ -1,3 +1,4 @@
+    // 코루틴의 이해와 예시
     int i = 1;
 
     void Start()
@@ -14,3 +15,30 @@
 
         StartCoroutine("Other"); //다시 코루틴 시작 (반복됨) 결과 = 2초마다 출력
     }
+
+
+//------------------------------------------------------------------------------------
+// 예시) 2초 간격으로 공격하기
+
+    public static float NPCTotolPoint; //NPC 총 데미지를 Scoer클래스와 공유하기 위한 곳
+    float CharacterADamage; //해당 NPC의 데미지
+
+    public void CreateCharacterAt()
+    {
+        
+        StartCoroutine("CreateCharacterA"); // 코루틴은 시작점이 있어야한다. 굳이 Start에서 시작할 필요 없다.
+
+    }
+   
+    IEnumerator CreateCharacterA() // IEnumerator 코루틴 메서드 이름
+    {
+
+        //Debug.Log("안녕" + i++);
+        yield return new WaitForSeconds(2); // 2초 딜레이 후 실행
+        CharacterADamage = 10;
+        NPCTotolPoint += CharacterADamage;
+
+        StartCoroutine("CreateCharacterA"); //다시 코루틴 시작 (반복됨) 결과 = 2초마다 출력
+    }
+   
+   
