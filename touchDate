@@ -1,0 +1,66 @@
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+
+public class TouchDate : MonoBehaviour
+{
+    int TouchGetCoin;
+    int TouchGetExp;
+
+    public static int TotalCoin = 0;
+    public static int TotalExp = 0;
+
+
+    /*
+     * 
+     *  # 조작 관련
+     *  GameScene TouchButton 터치할 때마다 실행되는 곳
+     * 
+     */
+    public void Touch()
+    {
+        TotalCoin += TouchGetCoin;
+        TotalExp += TouchGetExp;
+        Debug.Log(TotalCoin);
+        Debug.Log(TotalExp);
+        NowJob();
+    }
+
+    void Start ()
+    {
+        JobDate.JobGetAdd();
+        JobDate. JobGetList[0] = true;
+        NowJob();
+    }
+
+    /*
+     * 
+     *  # 직업관련
+     *  지금 직업이 무엇이고 그 직업이 획득가능한 코인과 경험치가 몇인지 나타내는 부분
+     *  (최대 직업이 늘어날 때 마다 추가해야 하는 곳)
+     * 
+     */
+    void NowJob()
+    {
+
+        for (int index = 0; index < JobDate.JobGetList.Count; index++)
+        {
+            
+
+            if (JobDate.JobGetList[0])
+            {
+                TouchGetCoin = 10;
+                TouchGetExp = 5;
+                
+                
+            }
+            if (JobDate.JobGetList[1])
+            {
+                TouchGetCoin = 20;
+                TouchGetExp = 10;
+                
+            }
+        }
+    }
+
+}
