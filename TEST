@@ -1,0 +1,77 @@
+    void JumpCheckScoer()
+    {
+        bool flag;
+        if (Position.y > JumpZoneY_Point.y + 65     // Head Good 포인트 최소치
+            && Position.y < JumpZoneY_Point.y + 80  // Head Good 포인트 최대치
+            || Position.y > JumpZoneY_Point.y + 20  // Foot Good 포인트 최소치
+            && Position.y < JumpZoneY_Point.y + 45) // Foot Good 포인트 최대치
+        {
+            flag = calcScore(TYPE_GOOD, Scoer, ComboPoint, false, true, false);
+
+        }
+        else if (Position.y > JumpZoneY_Point.y + 45 && Position.y < JumpZoneY_Point.y + 65)
+        {
+            flag = calcScore(TYPE_GREAT, Scoer, ComboPoint, false, false, true);
+
+        }
+        else
+        {
+            flag = calcScore(TYPE_FAIL, Scoer, ComboPoint, true, false, false);
+
+        }
+    }
+
+
+    private bool calcScore(int type, int scoer, int comboPoint, bool v1, bool v2, bool v3)
+    {
+        switch (type)
+        {
+            case TYPE_GOOD:
+                {
+                    Scoer= scoer + 3;
+                    ComboPoint = comboPoint + 1;
+                    UIManager.TextCloud[0].SetActive(v1);
+                    UIManager.TextCloud[1].SetActive(v2);
+                    UIManager.TextCloud[2].SetActive(v3);
+                    if (Item.ItemPrint)
+                    {
+                        Item.ItemGet_Success = true;
+                    }
+                }
+                return true;
+
+            case TYPE_GREAT:
+                {
+                    Scoer = scoer + 10;
+                    ComboPoint = comboPoint + 1;
+                    UIManager.TextCloud[0].SetActive(v1);
+                    UIManager.TextCloud[1].SetActive(v2);
+                    UIManager.TextCloud[2].SetActive(v3);
+                    if (Item.ItemPrint)
+                    {
+                        Item.ItemGet_Success = true;
+                    }
+                }
+                return true;
+
+            case TYPE_FAIL:
+                {
+                    Handheld.Vibrate();
+                    HealthPoint -= 20;
+                    ComboPoint = 1;
+                    UIManager.TextCloud[0].SetActive(v1);
+                    UIManager.TextCloud[1].SetActive(v2);
+                    UIManager.TextCloud[2].SetActive(v3);
+                    if (Item.ItemPrint)
+                    {
+                        Item.ItemGet_Fail = true;
+                    }
+                }
+                return true;
+
+        }
+
+        
+
+        return false;
+    }
