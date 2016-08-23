@@ -1,0 +1,25 @@
+// Collider 체크하는 유니티 이벤트 함수
+// Collider의 Trigger 체크가 되었을 때 사용가능하다.
+
+using UnityEngine;
+using System.Collections;
+
+public class OnTrigger : MonoBehaviour 
+{
+
+    void OnTriggerEnter(Collider col)
+    {
+        Debug.Log(col.name + "와 충돌 함");
+    }
+
+    void OnTriggerStay(Collider col)
+    {
+        Debug.Log(col.name + "와 충돌 중");
+    }
+
+    void OnTriggerExit(Collider col)
+    {
+        Debug.Log(col.name + "와 충돌 끝");
+    }
+
+}
