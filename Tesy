@@ -1,0 +1,5 @@
+// 현재 곡갱이를 쓰고 있다면 다른 처리를 하지 않음
+        if (_animator.GetCurrentAnimatorStateInfo(0).IsName("Mining")) return;
+        
+        // isMove 는 h 이 아니면 true 0이면 false다 
+        bool isMove = (h != 0) ? true : false;
