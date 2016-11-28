@@ -1,0 +1,462 @@
+using UnityEngine;
+using System;
+using System.Collections;
+
+public class WWWManager : MonoBehaviour 
+{
+	//Instance
+	private static WWWManager m_instance;
+	
+	public static WWWManager Instance
+	{
+		get
+		{
+			if (m_instance == null)
+			{
+				m_instance = GameObject.FindObjectOfType<WWWManager>();
+			}
+			return m_instance;
+		}
+	}
+
+	//private
+	private string linkPage;
+	private Parse linkParse;
+	private WWWForm linkForm;
+	private int tryCount;
+
+	//public
+	string		baseUrl;			//호스트
+	string		baseDirectory;			//디렉토리
+    bool _isDev;
+    /// <summary>
+    /// 개발 서버 유무 체크
+    /// </summary>
+	public bool isDev
+    {
+        get { return _isDev; }
+        set
+        {
+            _isDev = value;
+
+            //호스트
+            if (value)
+                baseUrl = "funmagic.kr/Dev";
+            else
+                baseUrl = "funmagic.kr";
+
+            //포톤 접속 방법 변경
+            if (value)
+                PhotonNetwork.PhotonServerSettings.HostType = ServerSettings.HostingOption.PhotonCloud;
+            else
+                PhotonNetwork.PhotonServerSettings.HostType = ServerSettings.HostingOption.SelfHosted;
+            
+        }
+    }
+
+	//delegate
+	public delegate void Parse(string text);
+
+	void Start()
+	{
+		//호스트
+		baseUrl = "funmagic.kr";
+
+		//디렉토리(현재 디렉토리 분류가 없음 앞으로 생기겠지?)
+		baseDirectory = "";
+	}
+
+    //새로 바꿈 2016/03/19
+    public IEnumerator WWW(string fileName, WWWForm form, System.Action<string> result = null, bool isShowLoadingIndicator = true, bool showDebug = false)
+    {
+        if (isShowLoadingIndicator)
+            LoadingIndicator.Instance.Show();
+
+        
+        WWW www = null;
+
+        //네트워크 상태 불량드엥 의해 접속 안되면 3번정도 재시도
+        int retryConnecionCount = 0;
+        while (www == null && retryConnecionCount < 3)
+        {
+            yield return StartCoroutine(Connect(fileName, form, x => www = x));
+            retryConnecionCount++;
+        }
+
+        //10초 동안 접속 안되면 쫑냄
+        if (!www.isDone)
+        {
+            result(null);
+            Dispose(www, LocalizationManager.GetText("Pre_Network_01"));
+            //Dispose(www, GlocalizationManager.GetText("5200000004"));
+            yield break;
+        }
+
+        if (www.error != null)
+        {
+#if UNITY_EDITOR
+            if (showDebug)
+                Debug.Log(www.error);
+#endif
+            result(null);
+            Dispose(www, LocalizationManager.GetText("Pre_Network_04"));
+			//Dispose(www, GlocalizationManager.GetText("5200000005"));
+			yield break;
+        }
+
+        result(www.text);
+            
+#if UNITY_EDITOR
+        if(showDebug)
+            Debug.Log("[WWWManager]" + fileName + " : " + www.text);
+#endif
+
+        Dispose(www);
+        
+        //로딩끝
+        LoadingIndicator.Instance.Hide();
+    }
+
+    //새로 바꿈 2016/03/19
+    IEnumerator Connect(string fileName, WWWForm form, System.Action<WWW> result)
+    {
+        WWW www;
+        if (form == null)
+            www = new WWW("http://" + baseUrl + "/" + fileName);
+        else
+            www = new WWW("http://" + baseUrl + "/" + fileName, form.data);
+        
+        float startTime = Time.time;
+        float elapsedTime = 0f;
+        while (!www.isDone && elapsedTime < 10f)
+        {
+            yield return null;
+            elapsedTime = Time.time - startTime;
+        }
+
+        //10초 동안 접속 안되면 쫑냄
+        if (!www.isDone)
+        {
+            result(null);
+            yield break;
+        }
+
+        result(www);
+    }
+
+
+    void Dispose(WWW www, string popUpMessage = null)
+    {
+        www.Dispose();
+        www = null;
+
+        if(popUpMessage != null)
+        {
+            //PopUp.Instance.Call(E_POP._OK, null, null, "안내", popUpMessage);
+            //PopUp.Instance.Call(E_POP._OK, null, null, LocalizationManager.GetText("5200000006"), popUpMessage);
+            PopUp.Instance.Call(E_POP._OK, null, null, "", popUpMessage);
+        }
+	}
+
+    //외부 호출용. 이름 바꿔야 함.... 링크???가 뭐임? 
+    [Obsolete("WWW 함수로 사용할 것")]
+    public void Link(string php, Parse parse, WWWForm form)
+	{
+		//재시도 할 경우를 위해 별도 저장
+		linkPage = php;
+		linkParse = parse;
+		linkForm = form;
+
+		StartCoroutine( this.SendLink(php, parse , form) );
+	}
+
+    //유저는 사용자이름 나머지는 디버그에 사용할 메세지를 넣어주세요
+    public void PhpLog(string user,params string[] messages)
+    {
+        if (messages.Length > 5) {
+            Debug.LogError("size over");
+            return;
+        }
+        WWWForm form= new WWWForm();
+        form.AddField("User", user);
+        form.AddField("Time", System.DateTime.Now.ToString());
+
+        for(int i=0; i<messages.Length;++i)
+        {
+            form.AddField("Value" + i, messages[i]);
+        }
+        string php = "DebugLog.php";
+
+        StartCoroutine(this.SendLink(php, null, form));
+    }
+    
+        //재시작
+        void LinkAgain()
+	{
+		//재시도 횟수
+		tryCount++;
+
+		if( tryCount < 3 )
+		{
+			StartCoroutine( this.SendLink(linkPage, linkParse , linkForm) );
+		}
+
+		else
+		{
+			tryCount = 0;
+
+            //팝업
+            //PopUp.Instance.Call( E_POP._OK, null, "", "Network error", "[ff00ff]Please check your internect connection.[-]");
+            PopUp.Instance.Call(E_POP._OK, null, "", "", LocalizationManager.GetText("Pre_Network_01"));
+            //PopUp.Instance.Call(E_POP._OK, null, "", GlocalizationManager.GetText("5200000007"), GlocalizationManager.GetText("5200000008"));
+        }
+	}
+
+	//데이터 통신 WWW
+	public IEnumerator SendLink(string szPage, Parse parse, WWWForm form, bool showDebug = false)
+	{
+
+#if UNITY_EDITOR
+    if(showDebug)
+        Debug.Log("isDev:" + isDev + ", " + "http://" + baseUrl + "/" + szPage);
+#endif
+        LoadingIndicator.Instance.Show();
+		
+		bool isRunning = true;
+		float time = 0.0f;
+		string temp_s = "";
+		
+		//네트워크 타임아웃
+		while( isRunning )
+		{
+			//Debug.Log("time : " + time);
+			time += Time.deltaTime;
+
+			WWW w;
+
+			if( form == null )
+			{
+				w = new WWW("http://" + baseUrl +"/" + szPage);
+			}
+
+			else
+			{
+				w = new WWW("http://" + baseUrl + "/" + szPage, form.data);
+			}
+
+#if UNITY_EDITOR
+            if(showDebug)
+                Debug.Log("http://" + baseUrl + "/" + szPage);
+#endif
+            while( !w.isDone )
+			{
+				yield return null;
+			}
+			
+			if( w.error != null )
+			{
+#if UNITY_EDITOR
+                if(showDebug)
+                    Debug.Log(w.error);
+#endif
+                if( time > 3.0f )
+				{
+					isRunning = false;
+					temp_s = w.error;
+				}
+			}
+			
+			//else if(w.bytesDownloaded < 1 )
+			//{
+			//	Debug.Log("w.bytesDownloaded : " + w.bytesDownloaded);
+
+			//	Debug.LogWarning("Error : " + szPage);
+
+			//	//팝업
+			//	PopUp.Instance.Call( E_POP._OK, this, "LinkAgain", "네트워크 오류", "[ff00ff]네트워크 장애[-]가 발생하였습니다.\n\n" + temp_s );
+				
+			//	isRunning = false;
+			//}
+			
+			else
+			{
+#if UNITY_EDITOR
+                if(showDebug)
+                    Debug.Log(szPage + "/w.text : " + w.text );
+#endif
+                //통신 끝 결과 파싱
+
+                //Memo: 에러메세지 처리 필요함 임시 처리
+                string[] errorMsg = new string[]
+				{"Failed to connect table", "No ID", "Invalid ID", "Error"};
+				//{ GlocalizationManager.GetText("5200000009"), GlocalizationManager.GetText("5200000010"), GlocalizationManager.GetText("5200000011"), GlocalizationManager.GetText("5200000012")};
+
+				string msg = "";
+                if (w.text.Length > 2)
+				    msg = w.text.Substring(2);
+
+				switch(msg)
+				{
+				case "00":
+				case "01":
+				case "02":
+				case "03":
+				{
+					int msgNum = int.Parse( w.text.Substring(2) );
+
+					Debug.LogWarning("Error : " + szPage);
+
+					//팝업
+					//PopUp.Instance.Call(E_POP._OK, null, "서버 오류" ,w.text, errorMsg[msgNum]);
+				    //PopUp.Instance.Call(E_POP._OK, null, LocalizationManager.GetText("5200000013"), w.text, errorMsg[msgNum]);
+                    PopUp.Instance.Call(E_POP._OK, null, "", w.text, errorMsg[msgNum]);
+				}
+					break;
+					
+				default:
+				{
+					if(parse != null )
+					{
+						parse(w.text);
+					}
+				}
+					break;
+				}
+				
+				w.Dispose();
+				w = null;
+
+				time = 0.0f;
+				isRunning = false;
+
+				//재시도 횟수 초기화
+				tryCount = 0;
+			}
+		}//while
+		
+		//에러처리
+		if( isRunning == false && time > 3.0f )
+		{
+#if UNITY_EDITOR
+            if (showDebug)
+            {
+                Debug.Log(time);
+                Debug.Log(temp_s);
+                Debug.LogWarning("Error : " + szPage);
+            }
+#endif
+            //팝업
+            //PopUp.Instance.Call( E_POP._OK, this, "LinkAgain", "네트워크 오류", "[ff00ff]네트워크 장애[-]가 발생하였습니다.\n\n" + temp_s );
+            //PopUp.Instance.Call(E_POP._OK, this, "LinkAgain", LocalizationManager.GetText("5200000014"), LocalizationManager.GetText("5200000015") + temp_s);
+            PopUp.Instance.Call(E_POP._OK, this, "LinkAgain", "", LocalizationManager.GetText("Pre_Network_02") + temp_s);
+        }
+
+		//로딩끝
+		LoadingIndicator.Instance.Hide();
+		yield break;
+	}
+
+    IEnumerator CheckInternetConnection(Action<bool> action)
+    {
+        WWW www = new WWW("http://www.funmagic.kr");
+        yield return www;
+        
+        action(www.error == null);
+    }
+
+    float lastPopUpShowTime = 0f;
+    public IEnumerator WaitToConnectInternet(bool showPopUp = true)
+    {
+        
+        while (Application.internetReachability == NetworkReachability.NotReachable)
+        {
+            LoadingIndicator.Instance.Show();
+            //계속 인터넷 접속 안되면 5초 마다 한 번씩 팝업 보여주기
+            if (showPopUp && Time.time > lastPopUpShowTime + 5f)
+            {
+                LoadingIndicator.Instance.Hide();
+                //PopUp.Instance.Call(E_POP._OK, this, "ResetPopUpShowTime", "안내", "인터넷에 연결할 수 없습니다.\n데이타 네트워크 설정을 확인하세요.\n(3G, LTE, Wifi)");
+                //PopUp.Instance.Call(E_POP._OK, this, "ResetPopUpShowTime", LocalizationManager.GetText("5200000016"), LocalizationManager.GetText("5200000017"));
+                PopUp.Instance.Call(E_POP._OK, this, "ResetPopUpShowTime", "", LocalizationManager.GetText("Pre_Network_03"));
+                lastPopUpShowTime = Time.time;
+            }
+            yield return null;
+        }
+
+        bool isConnectedToInternet = false;
+        StartCoroutine(CheckInternetConnection(x => isConnectedToInternet = x));
+
+        while (!isConnectedToInternet)
+        {
+            LoadingIndicator.Instance.Show();
+            
+            //계속 인터넷 접속 안되면 5초 마다 한 번씩 팝업 보여주기
+            if (showPopUp && Time.time > lastPopUpShowTime + 5f)
+            {
+                LoadingIndicator.Instance.Hide();
+                //PopUp.Instance.Call(E_POP._OK, this, "ResetPopUpShowTime", "안내", "인터넷에 연결할 수 없습니다.\n데이타 네트워크 설정을 확인하세요.\n(3G, LTE, Wifi)");
+                //PopUp.Instance.Call(E_POP._OK, this, "ResetPopUpShowTime", LocalizationManager.GetText("5200000016"), LocalizationManager.GetText("5200000017"));
+                PopUp.Instance.Call(E_POP._OK, this, "ResetPopUpShowTime", "", LocalizationManager.GetText("Pre_Network_03"));
+                lastPopUpShowTime = Time.time;
+
+                StartCoroutine(CheckInternetConnection(x => isConnectedToInternet = x));
+            }
+
+#if UNITY_EDITOR
+            Debug.Log(isConnectedToInternet);
+#endif 
+            yield return null;
+        }
+        
+        PopUp.Instance.Clear();
+
+        LoadingIndicator.Instance.Hide();
+
+        //yield break;
+        //if (Application.internetReachability == NetworkReachability.NotReachable)
+        //{
+        //    if(showPopUp)
+        //        PopUp.Instance.Call(E_POP._OK, null, null, "안내", "인터넷에 연결할 수 없습니다. 데이타 네트워크 설정을 확인하세요.\n(3G, LTE, Wifi)");
+        //}
+
+        //while (Application.internetReachability == NetworkReachability.NotReachable)
+        //    yield return null;
+    }
+
+    
+    void ResetPopUpShowTime()
+    {
+        lastPopUpShowTime = Time.time;
+    }
+
+    bool _isBadUser = false;
+    bool isBadUser { get { return _isBadUser; } set { _isBadUser = value; } }
+    /// <summary> 핵 신고 </summary>
+    public IEnumerator ReportHack(string userID, string deviceID, string memo)
+    {
+        if (isBadUser)
+            yield break;
+
+        isBadUser = true;
+
+        string url = "ReportBillingHack.php";
+        WWWForm form = new WWWForm();
+        form.AddField("userID", userID);
+        form.AddField("deviceID", deviceID);
+        form.AddField("memo", memo);
+
+        string s;
+        //서버에 기록
+        yield return StartCoroutine(WWWManager.Instance.WWW(url, form, x => s = x));
+
+        //PopUp.Instance.Call(E_POP._OK, this, "Quit", LocalizationManager.GetText("5200150053"), LocalizationManager.GetText("5200150054"));
+        PopUp.Instance.Call(E_POP._OK, this, "Quit", "", LocalizationManager.GetText("UI_PopUp_145"));
+        
+        yield break;
+    }
+
+    void Quit()
+    {
+        Application.Quit();
+    }
+}
