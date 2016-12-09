@@ -1,0 +1,1452 @@
+using UnityEngine;
+//#if UNITY_EDITOR
+//using UnityEditor;
+//#endif
+using System.Collections;
+using System.Collections.Generic;
+using LitJson;
+
+#if UNITY_ANDROID
+using GooglePlayGames;
+#endif
+using UnityEngine.SocialPlatforms;
+using System.Text;
+
+
+public class SceneLogIn : MonoBehaviour 
+{
+    static public SceneLogIn Instance;
+
+    //class
+    [System.Serializable]
+    public class InfoFilter
+    {
+        public int      index;
+        public string   word;
+    }
+
+    #region 변수들    
+    //serverStat
+    int lastClientVersionCode;
+    bool isEditor, isServerEnable, isNeedUpdate;
+    string lastClientVersion, noticeMessage, clientURL;
+
+#if UNITY_ANDROID
+    static AndroidJavaObject    javaObject;
+    //static AndroidJavaObject    javaObject2;
+#endif
+
+    public UIAtlas              atlasLogin = null;
+    public UIPanel              panelBackground = null;
+
+    //클라이언트 버전
+    public UILabel labelClientVersion;
+
+    //로그인
+    [Header("---로그인 패널---")]
+    public UIPanel  panelLogIn = null;
+    public UIButton buttonLoginGoogle;
+    public UIButton buttonLoginRecent;
+    public UILabel labelRecentNickname;
+	
+    [Header("---다운로드 게이지, 로딩 레이블---")]
+    //어셋 체크, 다운로드
+    public UIPanel              panelCheckAsset = null;
+    public UIProgressBar        downloadProgressBar = null;
+    public UILabel              labelCheckAsset = null;
+
+
+    //국가 선택관련
+    //string selectionCountry;                 //선택된 국가코드
+    //string country = "US";                      //선택된 국가 영문명
+    //LanguageType selectionLanguage = LanguageType.english;       //선택된 언어
+
+    //public
+    [Header("---터치스크린---")]
+    public Camera               camera;			        //ui카메라
+	public GameObject           buttonTouch;	        //터치스크린 버튼
+	public GameObject           breakObj;		        //브레이킹 효과 obj
+	public AudioSource          breakSound;             //브레이킹 효과 사운드
+
+    [Header("---서버선택(에디터용)---")]
+    public GameObject           serverObj;		        //서버선택 obj
+	public UIToggle             toggleDev;			    //개발서버접속 토글
+    
+
+	
+	public List<InfoFilter>     infoFilterList;         //닉네임 체크용
+    bool                        isFilterOk;
+
+    string  manufacturer = "";
+    string  model = "";
+    string  cameraParams = "";
+    string  deviceID = "";
+    string  userName = "";
+    string  email = "";
+
+    const string bundleNameJsonFilterNick       = "json/filter_nick";
+    const string assetJsonFilterNick            = "filterNick";
+
+    //public AssetBundleManifest  manifest;
+    bool canDownload = false;
+
+    public bool isCanJoinTheNewTutorial = false;    //신규 튜토리얼 테스트용 변수(임시)
+
+    [Header("---서버점검 중 입장 치트키---")]
+    public GameObject           serverEnterCheat;                   //치트 root 오브젝트
+    public UIInput              inputCheatSecondPW;                 //2차 비밀번호 입력란
+    public string               secondPW;                           //서버 닫혔을때 1차 버튼 클릭 후 2차 비밀번호 입력 PW
+    //public TextAsset jsonCountryData;
+    #endregion
+
+    //============================================================================================================
+
+    void Awake()
+    {
+        Instance = this;
+
+#if UNITY_EDITOR
+
+        isEditor = true;
+        //개발서버 선택창 표시
+        serverObj.SetActive(true);
+#else
+        isEditor = false;
+        // 개발서버 선택 유무 (유저들에게 배포할때는 반드시 false로...)
+        if(Debug.isDebugBuild)
+        {
+            WWWManager.Instance.isDev = true;
+		    serverObj.SetActive(true);
+        }
+        else
+        {
+            serverObj.SetActive(false);
+            WWWManager.Instance.isDev = false;
+        }
+        //serverObj.SetActive(false);
+        //WWWManager.Instance.isDev = false;
+        
+#endif
+        
+        //절전 기능 off. (화면 꺼짐 방지)
+        //#Todo: 옵션에서 바꿀 수 있게..
+        int isIgnoreSleepMode = PlayerPrefs.GetInt("isIgnoreSleepMode");    //기본값 = 1
+
+        if (isIgnoreSleepMode == 1)
+            Screen.sleepTimeout = SleepTimeout.NeverSleep;
+        else
+            Screen.sleepTimeout = SleepTimeout.SystemSetting;
+
+		//브레이킹 효과obj
+		breakObj.SetActive(false);
+		breakSound.enabled = false;
+
+        //iOS에서 구글 로그인 막기
+#if UNITY_IOS
+        if (buttonLoginGoogle)
+            buttonLoginGoogle.gameObject.SetActive(false);
+#endif
+
+    }
+
+    bool isLogin = false;
+
+	IEnumerator Start()
+	{
+		panelBackground.alpha = 0f;
+
+		panelLogIn.alpha = 0f;
+		panelLogIn.gameObject.SetActive(false);
+        
+		panelCheckAsset.alpha = 0f;
+
+		downloadProgressBar.value = 0f;
+
+		
+
+		while (serverObj.activeInHierarchy)
+			yield return null;
+
+        while (!LocalizationManager.isInitializedPreLocalizingData)
+            yield return null;
+
+		// 현재 언어설정 코드 알아내기
+		//yield return InitLanguageSetting();
+
+		// 에셋번들 받기전 작은 로컬라이징 데이터
+
+		//yield return LocalizationManager.Instance.coParsingPreLanguageDate(selectionLanguage);
+
+		yield return StartCoroutine(PopUp.Instance.initPOP());
+        
+
+		//닉네임 필터링 json
+		yield return StartCoroutine(InitFilterNickA());
+		//this.GetFilterNick();
+
+		//Memo:LinkManager의 로직이 바뀌어서 따로 체크해야 함, 기존로직으로는 start에서 필터링 정보를 다운로드해서 모바일에서 다운로드 받지 않는 경우가 있었음, 재접속도 없어져서 그냥 여기서 대기탐
+		//필터링 대기
+		if (isFilterOk == false)
+		{
+			yield return null;
+		}
+
+
+
+
+		//인터넷 접속 가능 여부 체크
+		yield return StartCoroutine(WWWManager.Instance.WaitToConnectInternet());
+
+		//서버 접속 가능 상태 체크, 클라이언트 업데에트 필요한지 체크
+		//LoadingIndicator.Instance.Show();
+
+		yield return StartCoroutine(RecieveServerStat());
+		//Debug.Log("최신 버전: " + lastClientVersion);
+		//Shader.WarmupAllShaders();
+		LoadingIndicator.Instance.Hide();
+
+		//서버 상태 체크
+		if (!isServerEnable && !isEditor)
+		{
+			//치트 root 오브젝트 활성화(서버 닫혔을 때 입장을 위한)
+			serverEnterCheat.SetActive(true);
+
+			//PopUp.Instance.Call(E_POP._OK, GameManager.Instance, "ExitGame", "안내 메세지", noticeMessage);
+			PopUp.Instance.Call(E_POP._OK, GameManager.Instance, "ExitGame", "", noticeMessage);
+			yield break;
+		}
+
+		if (IsNeedUpdate())
+			yield break;
+
+		Debug.Log("Init asset bundles");
+
+		//어셋번들 다운 받기
+		yield return StartCoroutine(UpdateAssetBundles());
+
+        // 언어 국가 데이터 부터 초기화
+        labelCheckAsset.text = "Init language";
+        yield return DataManager.Instance.Init_Language_Country();
+
+		yield return LocalizationManager.Instance.coInitializeLanguage();
+		yield return LocalizationManager.Instance.coParsingLanguageData(LocalizationManager.language);
+
+
+		labelCheckAsset.text = "";
+
+		//############### 로그인 #########################
+		//최근 접속한 ID
+		string recentID = PlayerPrefs.GetString("accountID");
+		string recentNickname = PlayerPrefs.GetString("nickname");
+
+		buttonLoginRecent.gameObject.SetActive(false);
+
+		if (!string.IsNullOrEmpty(recentID) && !string.IsNullOrEmpty(recentNickname))
+		{
+			//buttonLoginRecent.gameObject.SetActive(true);
+			//labelRecentNickname.text = recentNickname;
+			OnClickLoginRecent();
+		}
+		else
+		{
+			//buttonLoginRecent.gameObject.SetActive(false);
+			panelLogIn.gameObject.SetActive(true);
+			panelLogIn.alpha = 1f;
+		}
+
+		while (!isLogin)
+			yield return null;
+
+		string loading = LocalizationManager.GetText("Loading");
+		if (string.IsNullOrEmpty(loading))
+			labelCheckAsset.text = "Loading";
+		else
+			labelCheckAsset.text = LocalizationManager.GetText("Loading");
+
+
+		//유저 데이타 받아오기
+		UserData userData = UserData.Instance;
+		LoadingIndicator.Instance.Show();
+		yield return StartCoroutine(userData.InitUserData());
+
+
+		if (!isEditor)
+			yield return StartCoroutine(userData.UpdateUserDetailInfo(PlayerPrefs.GetString("accountID"), manufacturer, model, cameraParams, LocalizationManager.deviceCountry));
+		LoadingIndicator.Instance.Hide();
+
+		//게임 데이타 초기화
+		LoadingIndicator.Instance.Show();
+
+		yield return StartCoroutine(DataManager.Instance.InitDatas());
+
+		yield return StartCoroutine(userData.InitInventory(userData.userID));
+
+		yield return StartCoroutine(ResourcePool.Init());
+
+		labelCheckAsset.text = "";
+
+		LoadingIndicator.Instance.Hide();
+
+		//패널 전환
+		yield return StartCoroutine(FadeOutPanel(panelLogIn, 0.2f));
+
+		//다운로드 창 감추고 터치 스크린 화면 띄우기
+		StartCoroutine(FadeOutPanel(panelCheckAsset, 0.2f));
+		StartCoroutine(FadeInPanel(panelBackground, 0.2f));
+
+		LoadingIndicator.Instance.Hide();
+
+		//신규 튜토리얼 입장가능(임시)
+		isCanJoinTheNewTutorial = true;
+
+
+	}
+
+//    IEnumerator InitLanguageSetting()
+//    {
+//#if UNITY_IOS
+//        IOSNativeUtility.OnLocaleLoaded += GetLocale;
+//        IOSNativeUtility.Instance.GetLocale();
+//#endif
+//        //FIXNEED 현재 언어 설정코드 알아내고 혹시 없다면 언어 설정 얻어오기
+//        int language = PlayerPrefs.GetInt("language");
+
+//        if (language == 0)
+//        {
+//            //FIXNEED 나중에 유니티 시스템 설정 언어 가져와서 저장
+//            language = (int)getSystemLanguage();
+//            Option.Instance.language = language;
+//        }
+
+//        selectionLanguage = (LanguageType)language;
+//        LocalizationManager.language = selectionLanguage;
+
+//        yield break;
+//    }
+
+//    //iOS 전용
+//    void GetLocale(ISN_Locale locale)
+//    {
+//        country = locale.CountryCode;
+//        //Option.Instance.language = 
+////#if UNITY_IOS
+
+//        //        IOSNativePopUpManager.showMessage("Locale Info:", "Country:" + locale.CountryCode + "/"
+//        //                                  + locale.DisplayCountry + "  :   " + "Language:"
+//        //                                  + locale.LanguageCode + "/"
+//        //                                  + locale.DisplayLanguage);
+//        //        IOSNativeUtility.OnLocaleLoaded -= GetLocale;
+//        //#endif
+//    }
+
+    /// <summary> 안쓰는 함수 혹시나 나중에 ip얻어올때 쓸것 </summary>
+    private IEnumerator getGeoIP()
+    {
+
+        LoadingIndicator.Instance.Show();
+
+        WWW wwwForIp;
+        string strIp = "";
+
+        wwwForIp = new WWW("http://checkip.dyndns.org");
+
+        if (wwwForIp == null) yield break;
+
+        yield return wwwForIp;
+
+        strIp = wwwForIp.text;
+        strIp = strIp.Substring(strIp.IndexOf(":") + 1);
+        strIp = strIp.Substring(0, strIp.IndexOf("<"));
+
+        Debug.Log(strIp);
+
+
+        LoadingIndicator.Instance.Hide();
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+#if UNITY_ANDROID
+            string message = LocalizationManager.GetText("UI_Exit_01");
+            javaObject.Call("showMessage", message);            
+#endif
+        }
+    }
+
+    //============================================================================================================
+    public void OnClickLoginRecent()
+    {
+        panelLogIn.gameObject.SetActive(false);
+
+        StartCoroutine(OnClickLoginRecentA());
+    }
+    IEnumerator OnClickLoginRecentA()
+    {
+        string recentID = PlayerPrefs.GetString("accountID");
+        string loginResult = "";
+        yield return StartCoroutine(Login(LoginType.recent, x => loginResult = x));
+
+        //if (loginResult == "0")
+        //{
+        //    //아이디 새로 만들기
+
+
+        //    yield break;
+        //}
+    }
+
+
+    public void OnClickLogInFacebook()
+    {
+        panelLogIn.gameObject.SetActive(false);
+
+        FacebookManager.Login();
+    }
+    
+    public void OnClickLogInGoogle()
+    {
+        panelLogIn.gameObject.SetActive(false);
+        StartCoroutine(OnClickLogInGoogleA());
+
+    }
+    IEnumerator OnClickLogInGoogleA()
+    {
+#if UNITY_ANDROID
+        PlayGamesPlatform.DebugLogEnabled = true;
+        PlayGamesPlatform.Activate();
+        
+        //PlayGamesPlatform.Instance.SignOut();
+                
+        PlayGamesPlatform.Instance.Authenticate(GoogleAuthenticationResult, false);
+#endif
+        yield break;
+    }
+
+    public void OnClickLogInGuest()
+    {
+        panelLogIn.gameObject.SetActive(false);
+
+        StartCoroutine(OnClickLogInGuestA());
+    }
+    IEnumerator OnClickLogInGuestA()
+    {
+        //string recentID = PlayerPrefs.GetString("accountID");
+        string loginResult = "";
+        yield return StartCoroutine(Login(LoginType.guest, x => loginResult = x));
+
+        //if (loginResult == "0")
+        //{
+        //    //아이디 새로 만들기
+
+
+        //    yield break;
+        //}
+
+        isLogin = true;
+    }
+
+    public IEnumerator LoginByGoogle()
+    {
+        string loginResult = "";
+        yield return StartCoroutine(Login(LoginType.google, x => loginResult = x));
+
+        isLogin = true;
+    }
+
+    public IEnumerator LoginByFacebook()
+    {
+        string loginResult = "";
+        yield return StartCoroutine(Login(LoginType.facebook, x => loginResult = x));
+
+        isLogin = true;
+    }
+
+
+    void OnDestroy()
+    {
+        if (atlasLogin)
+            Resources.UnloadAsset(atlasLogin.texture);
+
+        Resources.UnloadUnusedAssets();
+    }
+    
+    /// <summary> 스크린 터치 -> 로비 이동 </summary>
+    public void OnclickTouchScreen()
+    {
+        //LobbyBGM.Instance.StopBGM();
+
+        buttonTouch.GetComponent<BoxCollider>().enabled = false;
+        breakSound.enabled = true;
+        StartCoroutine(this.IntotheLobby());
+    }
+    
+    /// <summary> 서버 상태 변경 </summary>
+    public void OnChangeServer()
+    {
+        //링크매니저 주소 변경
+        WWWManager.Instance.isDev = toggleDev.value;
+
+
+
+#if UNITY_EDITOR
+        Debug.Log(PhotonNetwork.PhotonServerSettings.HostType);
+#endif
+    }
+
+    /// <summary> 시작 버튼 </summary>
+    public void OnClickStart()
+    {
+        OnChangeServer();
+        serverObj.SetActive(false);
+    }
+    
+    /// <summary>
+    /// 서버 닫혔을때 2차 비밀번호 입력 확인 버튼 클릭시
+    /// </summary>
+    public void OnClickServerEnterCheat()
+    {
+        if(inputCheatSecondPW.value.Equals(secondPW))
+        {
+            serverEnterCheat.SetActive(false);
+            PopUp.Instance.Clear();
+
+            IsNeedUpdate();
+        }
+    }
+
+    //============================================================================================================
+
+#region UI컨트롤
+
+    IEnumerator ChangePanel(UIPanel fromPanel, UIPanel ToPanel)
+    {
+        StartCoroutine(FadeOutPanel(fromPanel, 1.0f));
+
+        while (fromPanel.alpha >= 0.0f)
+        {
+            if (fromPanel.alpha <= 0.0f)
+            {
+                StartCoroutine(FadeInPanel(ToPanel, 1.0f));
+
+                yield break;
+            }
+
+            yield return new WaitForSeconds(0.1f);
+        }
+
+        yield return null;
+    }
+
+    void ActivateButtonsInPanel(UIPanel panel, bool enable)
+    {
+        if (panel == panelBackground)
+            return;
+
+        UIButton[] buttons = panel.gameObject.GetComponentsInChildren<UIButton>();
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            buttons[i].enabled = enable;
+        }
+    }
+
+    IEnumerator FadeInPanel(UIPanel panel, float time)
+    {
+        //페이드인 되는 동안은 버튼들 작동 안되게끔
+        ActivateButtonsInPanel(panel, false);
+
+        //float ammount = time / 30f; //프레임당 전환이 된다고 가정. 해보고 이상하면 나중에 수정
+        float amount;// = 1f / time;
+        //페이드인
+        while (panel.alpha <= 1.0f)
+        {
+            amount = (1f / time) * Time.deltaTime;
+            panel.alpha += amount;
+            if (panel.alpha >= 1.0f)
+            {
+                //페이드인이 다 됬으면 모든 버튼들을 활성화 시켜준다.
+                ActivateButtonsInPanel(panel, true);
+
+                yield break;
+            }
+
+            yield return null;
+        }
+    }
+
+    IEnumerator FadeOutPanel(UIPanel panel, float time)
+    {
+        ActivateButtonsInPanel(panel, false);
+
+        float amount;// = 1 / time ;
+
+        while (panel.alpha >= 0.0f)
+        {
+            amount = (1f / time) * Time.deltaTime;
+            panel.alpha -= amount;
+            if (panel.alpha <= 0.0f)
+            {
+                yield break;
+            }
+            yield return null;
+        }
+    }
+
+#endregion
+
+    public void AndroidMessage(string msg)
+    {
+        labelClientVersion.text = msg;
+    }
+    
+
+    IEnumerator RecieveServerStat()
+    {        
+		string wwwString = "";
+
+		if( WWWManager.Instance.isDev )
+		{
+#if UNTIY_IOS
+            wwwString = "http://funmagic.kr/Dev/GetServerStatIOS.php";
+#endif
+#if UNITY_EDITOR || UNTIY_ANDROID
+            wwwString = "http://funmagic.kr/Dev/GetServerStat.php";
+#endif
+
+        }
+
+        else
+		{
+#if UNTIY_IOS
+                    wwwString = "http://funmagic.kr/GetServerStatIOS.php";
+#endif
+
+#if UNITY_EDITOR || UNTIY_ANDROID
+            wwwString = "http://funmagic.kr/GetServerStat.php";
+#endif
+
+
+        }
+
+        WWW www = new WWW(wwwString);
+
+        yield return www;
+
+        if (!string.IsNullOrEmpty(www.error))
+            Debug.Log(www.error);
+
+#if UNITY_EDITOR
+        Debug.Log(www.text);
+#endif
+        JsonParser jsonParser = new JsonParser();
+        string wwwText = jsonParser.Decoder(www.text);
+
+        //json 읽기
+        JsonReader jReader = new JsonReader(wwwText);
+        JsonData serverStat = JsonMapper.ToObject(jReader);
+
+
+        lastClientVersionCode = jsonParser.ToInt(serverStat[0]["lastClientVersionCode"]);
+        lastClientVersion = jsonParser.ToString(serverStat[0]["lastClientVersion"]);
+        isServerEnable = jsonParser.ToBool(serverStat[0]["isServerEnable"]);
+        isNeedUpdate = jsonParser.ToBool(serverStat[0]["isNeedUpdate"]);
+        noticeMessage = jsonParser.ToString(serverStat[0]["noticeMessage"]);
+        clientURL = jsonParser.ToString(serverStat[0]["clientURL"]);
+        //if (Application.systemLanguage == SystemLanguage.Chinese)
+        //{
+        //    clientURL = jsonParser.ToString(serverStat[0]["clientURL_China"]);
+        //}
+    }    
+    
+	
+	IEnumerator IntotheLobby()
+	{
+		breakObj.SetActive(true);
+
+		//브레이크 효과
+
+		//위치
+		breakObj.transform.position = this.camera.ScreenToWorldPoint(Input.mousePosition);
+		int rand = Random.Range(0,3610);
+		//Debug.Log(rand);
+		float rotZ = (float)rand/10.0f;
+		//회전
+		breakObj.transform.localRotation = Quaternion.Euler( new Vector3(0.0f, 0.0f, rotZ) );
+		breakObj.SetActive(false);
+	
+		//소리와 싱크가 안맞는거 같아 기다리는 딜레이 삭제함
+		yield return new WaitForSeconds(0.3f);
+
+
+		breakObj.SetActive(true);
+		yield return new WaitForSeconds(0.5f);
+
+		
+		//if (WWWManager.Instance.isDev) DataManager.Instance.userData.isFinishTutorial = true;
+
+		//튜토리얼 했으면 로비로 입장. 아니면 튜토리얼 씬으로
+		if (DataManager.Instance.userData.isFinishTutorial)
+		{
+            yield return StartCoroutine(AssetLoader.Instance.LoadLevelAsync("ui/lobby/scene", "Lobby", false));
+            //yield return StartCoroutine(DataManager.Instance.userData.InitInventory(DataManager.Instance.userData.userID));
+            //JoinNew.Instance.TutorialStart();
+        }
+        else
+		{            
+            yield return StartCoroutine(DataManager.Instance.userData.InitInventory(DataManager.Instance.userData.userID));
+            TutorialJoin.Instance.TutorialStartA();
+        }
+            
+        
+        yield break;
+	}
+
+
+    void GoogleAuthenticationResult(bool success)
+    {
+#if UNITY_ANDROID
+        if (success)
+        {
+            //Debug.Log("Authenticated, checking achievements");
+            //Debug.Log("Login: " + success);            
+            Debug.Log("id: " + PlayGamesPlatform.Instance.localUser.id);
+            Debug.Log("userName: " + PlayGamesPlatform.Instance.localUser.userName);
+            Debug.Log("state: " + PlayGamesPlatform.Instance.localUser.state);
+            
+            userName = Social.localUser.userName;
+
+            email = PlayGamesPlatform.Instance.GetUserEmail();
+            
+            Debug.Log("email: " + email);
+            //Social.LoadAchievements(ProcessLoadedAchievements);
+            if (string.IsNullOrEmpty(Social.localUser.id))
+            {
+                //"Google 계정 정보를 받아올 수 없습니다."
+                PopUp.Instance.Call(E_POP._OK, this, "LogInGooglePlay", "", LocalizationManager.GetText("UI_PopUp_133"));
+                return;
+            }
+
+            StartCoroutine(LoginByGoogle());
+
+            //playerprefs에 로그인 정보 저장
+            //PlayerPrefs.SetString("accountID", Social.localUser.id);
+            //PlayerPrefs.SetString("userName", Social.localUser.userName);
+            //PlayerPrefs.SetString("email", PlayGamesPlatform.Instance.GetUserEmail());
+            //PlayerPrefs.Save();
+        }
+        else
+        {   
+            Debug.Log("Failed to authenticate");
+
+            StartCoroutine(ShowLoginPanel());
+
+            //"구글 계정 로그인 실패"
+            //PopUp.Instance.Call(E_POP._OK, this, "LogInGooglePlay", "", LocalizationManager.GetText("UI_PopUp_134"));
+        }
+#endif
+    }
+
+    void ProcessLoadedAchievements(IAchievement[] achievements)
+    {
+        if (achievements.Length == 0)
+            Debug.Log("Error: no achievements found");
+        else
+            Debug.Log("Got " + achievements.Length + " achievements");
+
+        //// You can also call into the functions like this
+        //Social.ReportProgress("Achievement01", 100.0, result => {
+        //    if (result)
+        //        Debug.Log("Successfully reported achievement progress");
+        //    else
+        //        Debug.Log("Failed to report achievement");
+        //});
+    }
+
+    void Quit()
+    {
+        Application.Quit();
+    }
+
+    void OpenCafeNoticePage()
+    {
+
+        //구글 플레이 연동 실패 관련 공지사항 링크
+        Application.OpenURL("http://cafe.naver.com/colafps/8858");
+        Application.Quit();
+    }
+
+    /// <summary>
+    ///테스터 신청페이지 연결
+    /// </summary>
+    void OpenTestPage()
+    {
+        Application.OpenURL("https://play.google.com/apps/testing/com.funmagic.cola");
+        Application.Quit();
+    }
+
+    enum LoginType
+    {
+        recent,
+        guest,
+        facebook,
+        google
+    }
+
+    IEnumerator Login(LoginType loginType, System.Action<string> result)
+    {
+        string wwwString = "LogIn.php";
+        WWWForm form = new WWWForm();
+        form.AddField("type", loginType.ToString());
+        if(loginType == LoginType.recent)
+        {
+            form.AddField("id", PlayerPrefs.GetString("accountID"));
+        }
+        if(loginType == LoginType.google)
+        {
+            form.AddField("google", Social.localUser.id);
+        }
+        if(loginType == LoginType.facebook)
+        {
+            form.AddField("facebook", FacebookManager.userID);
+        }
+
+        //form.AddField("password", "");
+        //form.AddField("name", userName);
+        //form.AddField("email", email);
+        form.AddField("deviceID", deviceID);
+        form.AddField("country", LocalizationManager.deviceCountry);
+
+        Debug.Log(form.ToString());
+
+        //Debug.LogWarning(jsonToServer);
+        //통신
+        string wwwResult = "";
+        yield return StartCoroutine(WWWManager.Instance.WWW(wwwString, form, x => wwwResult = x));
+
+        Debug.Log(wwwResult);
+        char c = '<';
+        string[] ss = wwwResult.Split(c);
+        wwwResult = ss[0];
+        Debug.Log(wwwResult);
+
+        //해당 아이디가 없음
+        if (wwwResult == "0")
+        {
+            //#Todo: 시스템 메시지 출력 시켜주기
+            //Debug.Log("새로 등록한 id");
+            //panelCreateNickName.alpha = 1f;
+            //panelCreateNickName.gameObject.SetActive(true);
+
+            result(wwwResult);
+
+            yield break;
+        }
+        //블랙리스트
+        else if (wwwResult == "999")
+        {
+            string text = LocalizationManager.GetText("Access is denied due to abnormal activity");
+            if (string.IsNullOrEmpty(text))
+                text = "Access is denied due to abnormal activity";
+            PopUp.Instance.Call(E_POP._OK, this, "Quit", "Login failed", text);
+            result(wwwResult);
+
+            yield break;
+        }
+
+        PlayerPrefs.SetString("accountID", wwwResult);
+
+        result(wwwResult);
+
+        isLogin = true;
+    }
+
+    public IEnumerator ShowLoginPanel()
+    {
+        panelLogIn.gameObject.SetActive(true);
+        while (panelLogIn.alpha < 1f)
+        {
+            panelLogIn.alpha += 0.1f;
+            yield return null;
+        }
+
+        panelLogIn.alpha = 1f;
+    }
+
+    IEnumerator CreateAccount(string userID, string accountType)
+    {
+        string wwwString = "CreateAccount.php";
+        WWWForm form = new WWWForm();
+        form.AddField("id", userID);
+        form.AddField("type", accountType); //google, facebook, guest
+        //form.AddField("nickname", nickname);
+        //form.AddField("password", password);
+        form.AddField("country", LocalizationManager.deviceCountry);
+
+        string wwwResult = "";
+        yield return StartCoroutine(WWWManager.Instance.WWW(wwwString, form, x => wwwResult = x));
+
+        if (wwwResult == "1")   //반환값은 CreateAccount.php 참조
+        {
+            //Debug.Log("ID 중복");            
+            //"이미 있는 아이디입니다."
+            PopUp.Instance.Call(E_POP._OK, null, null, "", LocalizationManager.GetText("UI_PopUp_130"));
+            
+            yield break;
+        }
+        else if (wwwResult == "2")
+        {
+            //"닉네임 중복";
+            PopUp.Instance.Call(E_POP._OK, null, null, "", LocalizationManager.GetText("UI_PopUp_132"));
+            
+            yield break;
+        }
+        else
+        {
+            string loginResult = "";
+            //yield return StartCoroutine(Login(userID, x=> loginResult = x));
+        }
+        
+
+        yield break;
+    }
+    
+    IEnumerator UpdateAssetBundles()
+    {
+        panelCheckAsset.alpha = 1f;
+        downloadProgressBar.alpha = 0f;
+        labelCheckAsset.text = "Check assets";
+        //labelCheckAsset.text = GlocalizationManager.GetText("5100010012");
+        yield return null;
+
+		Debug.Log("Initialize asset loader");
+
+        yield return StartCoroutine(AssetLoader.Instance.Initialize());
+
+        int assetCount = AssetLoader.Instance.assetBundleHashes.Count;
+
+        List<AssetLoader.AssetBundleHash> assetBundleHashes = AssetLoader.Instance.assetBundleHashes;
+
+        List<AssetLoader.AssetBundleHash> assetBundlesToDownload = new List<AssetLoader.AssetBundleHash>();
+
+        //다운로드 필요한 어셋만 따로 취합
+        int count = assetBundleHashes.Count;
+        float lastCheckTime = Time.time;
+        for (int i = 0; i < count; i++)
+        {
+            //다운 받지 않을 것들
+            if (assetBundleHashes[i].assetBundle == "map/etc/tutorialmapfirstmission/scene")
+                continue;
+
+            //labelCheckAsset.text = "Check assets (" + (i + 1) + "/" + count + ")";
+            //yield return null;
+
+            //if (Time.time > lastCheckTime + 1f)
+            //{
+            //    labelCheckAsset.text = "Check assets (" + (i + 1) + "/" + count + ")";
+            //    lastCheckTime = Time.time;
+            //    labelCheckAsset.Update();
+            //    yield return new WaitForSeconds(0.1f);
+            //}
+            
+
+            //bool isCached = Caching.IsVersionCached(assetBundleHashes[i].assetBundle, Hash128.Parse(assetBundleHashes[i].hash));
+            bool isCached = Caching.IsVersionCached(assetBundleHashes[i].assetBundle, assetBundleHashes[i].hash);
+#if UNITY_EDITOR
+            //Debug.Log(assetBundleHashes[i].assetBundle + " : " + isCached);
+#endif
+            if (!isCached)
+                assetBundlesToDownload.Add(assetBundleHashes[i]);
+        }
+
+
+        //다운로드 진행 상황 보여주기. 다운로드 할 것 없으면 그냥 패스
+        if (assetBundlesToDownload.Count < 1)
+        {
+            labelCheckAsset.text = "";
+            yield break;
+        }
+
+
+        ////다운로드 사이즈 구하기
+        //long totalSize = AssetLoader.Instance.GetDownloadSizeOfBundles(assetBundlesToDownload);
+        long totalSize = 0;
+        yield return StartCoroutine(AssetLoader.Instance.GetDownloadSizeOfBundlesA(assetBundlesToDownload, x => totalSize = x)); 
+
+        ////Debug.Log("Total download file : " + assetBundlesToDownload.Count + ", size: " + totalSize);
+
+        //다운로드 해야될 용량이 10MB이상이면
+        float mb = totalSize / 1048576;
+        if (totalSize > 1048576)
+        {
+            canDownload = false;
+            //mb = totalSize / 1048576;
+
+            //string text = "추가 다운로드가 필요합니다.\nWifi를 이용한 다운로드를 권장합니다.\n(용량: 약 " + mb + "MB)";
+            //PopUp.Instance.Call(E_POP._OK, this, "StartDownloadAssets", "안내", text);
+        }
+
+
+        //다운로드 해야될 용량이 10MB이상이면
+
+        canDownload = false;
+
+        //string text = assetBundlesToDownload.Count + "개 파일의 추가 다운로드가 필요합니다.";
+        //PopUp.Instance.Call(E_POP._OK, this, "StartDownloadAssets", "안내", text);
+
+        string text = "";
+        //if ((LanguageType) Option.Instance.language == LanguageType.korean)
+          //  text = "추가 다운로드가 필요합니다. (" + mb + "MB)";
+        //else
+        //    text = "You need to download additional files. (" + mb + "MB)";
+
+        text = LocalizationManager.GetText("Pre_Additional file") + " (" + mb + "MB)";        
+        PopUp.Instance.Call(E_POP._OK, this, "StartDownloadAssets", "", text);
+
+
+        while (!canDownload)
+            yield return null;
+
+        panelCheckAsset.alpha = 1f;
+        downloadProgressBar.alpha = 1f;
+
+
+        string msg = "";
+        int cur = 1;
+        int percent = 0;
+        for (int i = 0; i < assetBundlesToDownload.Count; i++)
+        {
+            //yield return StartCoroutine(AssetLoader.Instance.DownLoadAsset(assetBundlesToDownload[i].assetBundle, Hash128.Parse(assetBundlesToDownload[i].hash)));
+            yield return StartCoroutine(AssetLoader.Instance.DownLoadAsset(assetBundlesToDownload[i].assetBundle, assetBundlesToDownload[i].hash));
+
+            cur = i + 1;
+            percent = (int)((cur * 100) / assetBundlesToDownload.Count);
+            msg = "Download data " + percent + "% (" + cur + "/" + assetBundlesToDownload.Count + ")";
+			//msg = GlocalizationManager.GetText("5100010015") + percent + " % (" + cur + "/" + assetBundlesToDownload.Count + ")";
+
+			labelCheckAsset.text = msg;
+
+            downloadProgressBar.value = (float)cur / (float)assetBundlesToDownload.Count;
+        }
+
+        while(downloadProgressBar.alpha > 0f)
+        {
+            downloadProgressBar.alpha -= 0.1f;
+        }
+        downloadProgressBar.alpha = 0f;
+
+        //labelCheckAsset.text = "다운로드 완료";
+        labelCheckAsset.text = LocalizationManager.GetText("Pre_Download complete");
+        //labelCheckAsset.text = GlocalizationManager.GetText("5100010016");
+        
+    }
+
+	void StartDownloadAssets()
+    {
+        canDownload = true;
+    }
+        
+    IEnumerator InitFilterNickA()
+    {
+        if (infoFilterList != null)
+        {
+            infoFilterList.Clear();
+            infoFilterList = null;
+        }
+
+        infoFilterList = new List<InfoFilter>();
+               
+
+        TextAsset txt = Resources.Load("filterNick") as TextAsset;
+        //Debug.Log(txt.text);
+        if (!txt)
+            yield break;
+        
+        JsonReader jReader = new JsonReader(txt.text);
+        JsonData jData = JsonMapper.ToObject(jReader);
+
+        ////어셋버들 캐쉬 된 것 사용
+        //JsonData jData = null;
+        //yield return StartCoroutine(AssetLoader.Instance.LoadJsonData(bundleNameJsonFilterNick, assetJsonFilterNick, x => jData = x));
+
+        if (jData == null)
+        {
+            Debug.LogError("Item base data has not initialized");
+            yield break;
+        }
+        //파싱
+        JsonParser jsonParser = new JsonParser();
+
+        for (int i = 0; i < jData.Count; i++)
+        {
+            InfoFilter info = new InfoFilter();
+
+            //인덱스
+            info.index = jsonParser.ToInt(jData[i]["index"]);
+
+            //단어
+            info.word = jsonParser.ToString(jData[i]["word"]);
+
+            infoFilterList.Add(info);
+
+            //필터 목록에 추가 (데이타 매니저가 들고 있음)
+            DataManager.Instance.filterStrings.Add(jsonParser.ToString(jData[i]["word"]));
+        }
+
+        isFilterOk = true;
+
+        yield break;
+    }
+	
+	void ParseFilterNick(string szBuf)
+	{
+		if (infoFilterList != null)
+		{
+			infoFilterList.Clear();
+			infoFilterList = null;
+		}
+		
+		infoFilterList = new List<InfoFilter>();
+		
+		//파싱
+		JsonParser jsonParser = new JsonParser();
+		szBuf = jsonParser.Decoder(szBuf);
+		
+		//DB에 지정된 필드 이름 참조할 것.
+		LitJson.JsonReader jReader = new LitJson.JsonReader(szBuf);
+		JsonData jData = JsonMapper.ToObject(jReader);
+		
+		for (int a = 0; a < jData.Count; a++)
+		{
+			InfoFilter info = new InfoFilter();
+			
+			//인덱스
+			info.index = jsonParser.ToInt(jData[a]["index"]);
+			
+			//단어
+			info.word = jsonParser.ToString(jData[a]["word"]);
+			
+			infoFilterList.Add(info);
+
+            //필터 목록에 추가 (데이타 매니저가 들고 있음)
+            DataManager.Instance.filterStrings.Add(jsonParser.ToString(jData[a]["word"]));
+		}
+
+		isFilterOk =  true;
+	}
+	
+	public bool CheckNick(string nick)
+	{
+#if UNITY_EDITOR
+		Debug.Log("CheckNick : " + nick);
+#endif
+		nick = nick.ToLower();
+		
+		char[] nickDivide = nick.ToCharArray(0, nick.Length);
+		
+		bool tempCheck = false;
+				
+		if (infoFilterList != null)
+		{
+			for (int a = 0; a < infoFilterList.Count; a++)
+			{
+				if (nick.Contains(infoFilterList[a].word))
+				{
+					//부적절한 닉네임
+					tempCheck = true;
+                    //PopUp.Instance.Call(E_POP._OK, null, "", "안내 메세지", "부적절한 단어가 포함되어 있습니다.");
+                    PopUp.Instance.Call(E_POP._OK, null, "", "", LocalizationManager.GetText("UI_PopUp_137"));
+                    //PopUp.Instance.Call(E_POP._OK, null, "", GlocalizationManager.GetText("5100010019"), GlocalizationManager.GetText("5100010020"));
+                    break;
+				}
+			}
+			
+			if (tempCheck == false)
+			{
+				//공백이 있는 경우
+				if (nick.Contains(" "))
+				{
+					tempCheck = true;
+                    //PopUp.Instance.Call(E_POP._OK, null, "", "안내 메세지", "공백은 사용할 수 없습니다.");
+                    //PopUp.Instance.Call(E_POP._OK, null, "", LocalizationManager.GetText("5100010021"), LocalizationManager.GetText("5100010022"));
+                    PopUp.Instance.Call(E_POP._OK, null, "", "", LocalizationManager.GetText("UI_PopUp_138"));
+                }
+				//특수 문자가 포함된 경우
+				else
+				{
+					for (int a = 0; a < nickDivide.Length; a++)
+					{
+						if (char.IsPunctuation(nickDivide[a]))
+						{
+							tempCheck = true;
+                            //PopUp.Instance.Call(E_POP._OK, null, "", "안내 메세지", "특수문자는 사용할 수 없습니다.");
+                            PopUp.Instance.Call(E_POP._OK, null, "", "", LocalizationManager.GetText("UI_PopUp_139"));
+                            //PopUp.Instance.Call(E_POP._OK, null, "", GlocalizationManager.GetText("5100010023"), GlocalizationManager.GetText("5100010024"));
+                            break;
+						}
+					}
+				}
+
+				//입력 글자수 제한을 초과한 경우
+				//Debug.Log("nickDivide : " + nickDivide.Length);
+				
+				//int count = Encoding.Default.GetByteCount(nick);
+				//Debug.Log("GetByteCount : " + count);
+				
+				//byte[] bt = Encoding.Default.GetBytes(nickDivide);
+				//Debug.Log("GetBytes : " + bt.Length);
+				int countMax = 16;
+				
+				int nickCount = 0;
+				
+				for(int a=0; a<nickDivide.Length; a++)
+				{
+					//한글
+					if(nickDivide[a] >= 0xAC00 && nickDivide[a] <= 0xD7AF)
+					{
+						nickCount += 2;
+					}
+					
+					else
+					{
+						nickCount++;
+					}
+				}
+
+#if UNITY_EDITOR
+				Debug.Log("nickCount : " + nickCount);
+#endif
+				if( nickCount > countMax )
+				{
+					tempCheck = true;
+                    //PopUp.Instance.Call(E_POP._OK, null, "", "안내 메세지", "닉네임은 영문16자 한글8자 이내입니다.");
+                    PopUp.Instance.Call(E_POP._OK, null, "", "", LocalizationManager.GetText("UI_PopUp_140"));
+                    //PopUp.Instance.Call(E_POP._OK, null, "", GlocalizationManager.GetText("5100010025"), GlocalizationManager.GetText("5100010026"));
+                }
+			}
+		}
+		
+		else
+		{
+			tempCheck = true;
+            //PopUp.Instance.Call(E_POP._OK, null, "", "안내 메세지", "닉네임 생성에 오류가 발생하였습니다.\n게임을 다시 접속하여 주십시오.");
+            PopUp.Instance.Call(E_POP._OK, null, "", "", LocalizationManager.GetText("UI_PopUp_141"));
+            //PopUp.Instance.Call(E_POP._OK, null, "", GlocalizationManager.GetText("5100010027"), GlocalizationManager.GetText("5100010028"));
+        }
+
+		return tempCheck;
+	}
+
+    //신규 튜토리얼 진입용(임시)
+    public IEnumerator IntotheNewTutorial()
+    {
+        isCanJoinTheNewTutorial = false;
+
+        breakObj.SetActive(true);
+
+        //브레이크 효과
+
+        //위치
+        breakObj.transform.position = this.camera.ScreenToWorldPoint(Input.mousePosition);
+        int rand = Random.Range(0, 3610);
+        //Debug.Log(rand);
+        float rotZ = (float)rand / 10.0f;
+        //회전
+        breakObj.transform.localRotation = Quaternion.Euler(new Vector3(0.0f, 0.0f, rotZ));
+        breakObj.SetActive(false);
+
+        //소리와 싱크가 안맞는거 같아 기다리는 딜레이 삭제함
+        yield return new WaitForSeconds(0.3f);
+
+
+        breakObj.SetActive(true);
+        yield return new WaitForSeconds(0.5f);
+
+        //튜토리얼 했으면 로비로 입장. 아니면 튜토리얼 씬으로
+        yield return StartCoroutine(DataManager.Instance.userData.InitInventory(DataManager.Instance.userData.userID));
+        JoinNew.Instance.TutorialStart();
+
+        yield break;
+    }
+
+    /// <summary>
+    /// 클라이언트 버전 체크 및 업데이트 체크
+    /// </summary>
+    bool IsNeedUpdate()
+    {
+        string versionName = "";
+        int versionCode = 0;
+
+#if !UNITY_EDITOR && UNITY_ANDROID
+        //서버 버전과 비교해서 업데이트 요청        
+        AndroidJavaClass jc = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+        javaObject = jc.GetStatic<AndroidJavaObject>("currentActivity");
+        versionName = javaObject.Get<string>("versionName");
+        versionCode = javaObject.Get<int>("versionCode");
+        manufacturer = javaObject.Get<string>("manufacturer");
+        model = javaObject.Get<string>("model");
+        deviceID = javaObject.Get<string>("deviceID");
+        
+        cameraParams = javaObject.Call<string>("GetCameraParams");
+
+
+        //현재 버전 표기
+        labelClientVersion.text = "v " + versionName;
+
+
+        //클라이언트 업데이트 필요한지 여부 체크
+        if (lastClientVersionCode > versionCode && !isEditor)
+        {
+            javaObject.Call("ShowUpdateDialog", clientURL);
+
+            return true;
+        }
+#endif
+
+#if !UNITY_EDITOR && UNITY_IOS
+        versionName = Application.bundleIdentifier;
+        int.TryParse(Application.version, out versionCode);        
+        //manufacturer = UnityEngine.iOS.Device.generation.ToString();
+        //manufacturer = SystemInfo.deviceModel;
+        model = SystemInfo.deviceModel;
+        manufacturer = "apple";
+        deviceID = UnityEngine.iOS.Device.advertisingIdentifier;
+        //country = "";
+        cameraParams = "";
+
+        //현재 버전 표기
+        //labelClientVersion.text = "v " + versionName + "(" + versionCode + ")";
+        labelClientVersion.text = "versionCode";
+
+        //클라이언트 업데이트 필요한지 여부 체크
+        if (lastClientVersionCode > versionCode && !isEditor)
+        {
+            IOSMessage msg = IOSMessage.Create("Update is availible", "A new version of the game is available", "Update");
+            msg.OnComplete += OnIOSUpdateDialogClose;
+
+            //IOSDialog dialog = IOSDialog.Create("", "Dialog message");
+            //dialog.OnComplete += onDialogClose;
+
+            return true;
+        }
+
+#endif
+
+#if UNITY_EDITOR
+        //에디터의 경우
+        System.Guid g = System.Guid.NewGuid();
+        deviceID = "Editor_" + g;
+        labelClientVersion.text = "v " + UnityEditor.PlayerSettings.bundleVersion;            
+#endif
+
+        //디바이스ID 유저데이타에 저장
+        UserData.Instance.deviceID = deviceID;
+
+        return false;
+        
+    }
+
+    private void OnIOSUpdateDialogClose()
+    {
+            //앱스토어로 이동
+            string appleId = "1179992797";
+            IOSNativeUtility.RedirectToAppStoreRatingPage(appleId);
+    }
+
+    LanguageType getSystemLanguage()
+    {
+        SystemLanguage temp = Application.systemLanguage;
+
+        LanguageType result;
+
+        switch (temp)
+        {
+            case SystemLanguage.Afrikaans:              
+            case SystemLanguage.Arabic:
+                result = LanguageType.arabic;
+                break;
+            case SystemLanguage.Basque:
+            case SystemLanguage.Belarusian:
+            case SystemLanguage.Bulgarian:
+            case SystemLanguage.Catalan:
+            case SystemLanguage.Chinese:
+                result = LanguageType.chinese;
+                break;
+            case SystemLanguage.Czech:
+            case SystemLanguage.Danish:
+            case SystemLanguage.Dutch:
+                result = LanguageType.dutch;
+                break;
+            case SystemLanguage.English:
+            case SystemLanguage.Estonian:
+            case SystemLanguage.Faroese:
+            case SystemLanguage.Finnish:
+            case SystemLanguage.French:
+                result = LanguageType.french;
+                break;
+            case SystemLanguage.German:
+                result = LanguageType.german;
+                break;
+            case SystemLanguage.Greek:
+                result = LanguageType.greek;
+                break;
+            case SystemLanguage.Hebrew:
+            case SystemLanguage.Hungarian:      // Hugarian 포함
+            case SystemLanguage.Icelandic:
+            case SystemLanguage.Indonesian:
+            case SystemLanguage.Italian:
+            case SystemLanguage.Japanese:
+                result = LanguageType.japanese;
+                break;
+            case SystemLanguage.Latvian:
+            case SystemLanguage.Lithuanian:
+            case SystemLanguage.Norwegian:
+            case SystemLanguage.Polish:
+            case SystemLanguage.Portuguese:
+                result = LanguageType.portuguese;
+                break;
+            case SystemLanguage.Romanian:
+            case SystemLanguage.Russian:
+                result = LanguageType.russian;
+                break;
+            case SystemLanguage.SerboCroatian:
+            case SystemLanguage.Slovak:
+            case SystemLanguage.Slovenian:
+            case SystemLanguage.Spanish:
+                result = LanguageType.spanish;
+                break;
+            case SystemLanguage.Swedish:
+            case SystemLanguage.Thai:
+                result = LanguageType.thai;
+                break;
+            case SystemLanguage.Turkish:
+                result = LanguageType.turkish;
+                break;
+            case SystemLanguage.Ukrainian:
+            case SystemLanguage.Vietnamese:
+                result = LanguageType.vietnamese;
+                break;
+            case SystemLanguage.ChineseSimplified:
+            case SystemLanguage.ChineseTraditional:
+            case SystemLanguage.Unknown:
+                {
+                    result = LanguageType.english;
+                 
+                }
+                break;
+            case SystemLanguage.Korean:
+                result = LanguageType.korean;
+                break;
+            default:
+                result = LanguageType.english;
+                break;
+        }
+        return result;
+
+
+    }
+
+
+
+}
+
